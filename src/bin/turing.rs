@@ -1,6 +1,20 @@
 /// Following the Destroy All Software screencast [here](https://www.destroyallsoftware.com/screencasts/catalog/computing-by-changing)
 
+#[macro_use]
+extern crate quicli;
+
 use std::collections::HashMap;
+use quicli::prelude::*;
+
+#[derive(Debug, StructOpt)]
+struct Cli {
+    /// The .turning file to read
+    file: String,
+
+    /// Pass many times for more log output
+    #[structopt(long = "verbose", short = "v", parse(from_occurrences))]
+    verbosity: u8,
+}
 
 #[derive(Copy, Clone)]
 enum Direction {
@@ -11,30 +25,29 @@ enum Direction {
 type State = u8;
 type Value = u8;
 
-fn main() {
-    use Direction::*;
+type Instructions = HashMap<(Value, State),(Value,Direction,State)>;
 
-    let mut x_b = HashMap::new();
-    x_b.insert((0, 0), (1, Right, 1));
-    x_b.insert((1, 0), (2, Right, 1));
-    x_b.insert((2, 0), (3, Right, 1));
-    x_b.insert((3, 0), (4, Right, 1));
-    x_b.insert((4, 0), (5, Right, 2));
+main!(|args: Cli, log_level: verbosity| {
+    let content = read_file(&args.file)?;
 
-    x_b.insert((0, 1), (0, Left,  0));
+    info!("Parsing file");
+    let instructions = parse(&content)?;
 
-    x_b.insert((5, 2), (5, Right, 2));
-    x_b.insert((0, 2), (0, Left,  2));
+    info!("Simulating file");
+    simulate(&instructions);
+});
 
-    simulate(&x_b);
-}
+const NUM_ITERATIONS: u8 = 24;
 
-fn simulate(instructions: &HashMap<(Value, State),(Value,Direction,State)>) {
-    let mut tape = [0; 2];
+fn simulate(instructions: &Instructions) {
+    let mut tape = [0; 16];
     let mut head = 0;
     let mut state = 0;
-    for _ in 0..16 {
-        println!("{:02x}{:02x}", tape[0], tape[1]);
+    for _ in 0..NUM_ITERATIONS {
+        for value in tape.iter() {
+            print!("{:02x}", value);
+        }
+        println!("");
         for _ in 0..head {
             print!("  ");
         }
@@ -48,4 +61,34 @@ fn simulate(instructions: &HashMap<(Value, State),(Value,Direction,State)>) {
         };
         state = new_state;
     }
+}
+
+fn parse(text: &str) -> Result<Instructions> {
+    let mut instructions = Instructions::new();
+    for line in text.lines() {
+        if line.trim() == "" {
+            continue;
+        }
+        let sides = line.split("->").collect::<Vec<_>>();
+        ensure!(sides.len() == 2, "No `->` in line");
+        let left = sides[0].split(",").collect::<Vec<_>>();
+        let right = sides[1].split(",").collect::<Vec<_>>();
+        ensure!(left.len() == 2, "Wrong number of items on left side");
+        ensure!(right.len() == 3, "Wrong number of items on right side");
+        let value_match: u8 = left[0].trim().parse()?;
+        let state_match: u8 = left[1].trim().parse()?;
+        let new_value: u8 = right[0].trim().parse()?;
+        let direction: char = right[1].trim().to_lowercase().chars().next().unwrap();
+        let new_state: u8 = right[2].trim().parse()?;
+
+        ensure!(direction == 'l' || direction == 'r', "Wrong number of items on left side");
+        let direction = match direction {
+            'l' => Direction::Left,
+            'r' => Direction::Right,
+            _ => panic!(),
+        };
+
+        instructions.insert((value_match, state_match), (new_value, direction, new_state));
+    }
+    Ok(instructions)
 }

@@ -1,3 +1,4 @@
+/// Following the Destroy All Software screencast [here](https://www.destroyallsoftware.com/screencasts/catalog/computing-by-changing)
 
 use std::collections::HashMap;
 

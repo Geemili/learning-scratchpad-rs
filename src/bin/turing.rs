@@ -66,7 +66,11 @@ fn simulate(instructions: &Instructions) {
 fn parse(text: &str) -> Result<Instructions> {
     let mut instructions = Instructions::new();
     for line in text.lines() {
-        if line.trim() == "" {
+        let line = match line.find('#') {
+            Some(n) => &line[0..n],
+            None => &line,
+        };
+        if line.trim() == "" || &line.trim()[0..1]=="#" {
             continue;
         }
         let sides = line.split("->").collect::<Vec<_>>();

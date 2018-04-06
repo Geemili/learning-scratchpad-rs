@@ -6,3 +6,5 @@ authors = ["LeRoyce Pearson <leroycepearson@geemili.xyz>"]
 [dependencies]
 failure = "0.1.1"
 quicli = "0.2"
+sha2 = "0.7"
+rand = "0.5.0-pre.0"

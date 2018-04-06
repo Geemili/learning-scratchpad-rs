@@ -1,3 +1,8 @@
+// This is a simple blockchain demonstration (?) following [Build Your Own
+// Blockchain][byob] at http://ecomunsing.com/
+//
+// [byob]: http://ecomunsing.com/build-your-own-blockchain
+
 extern crate sha2;
 extern crate rand;
 extern crate serde;

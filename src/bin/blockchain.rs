@@ -8,12 +8,14 @@ extern crate rand;
 extern crate serde;
 #[macro_use] extern crate serde_derive;
 extern crate rmp_serde;
+#[macro_use] extern crate failure;
 
 use sha2::{Sha256, Digest};
 use rand::{Rng, thread_rng};
 use std::collections::BTreeMap;
-use serde::Serialize;
-use rmp_serde::Serializer;
+use serde::{Serialize, Deserialize};
+use rmp_serde::{Serializer, Deserializer};
+use failure::Error;
 
 const ALICE_ID: AccountId = 1;
 const BOB_ID: AccountId = 2;
@@ -59,34 +61,6 @@ fn main() {
         chain.push(block);
     }
 
-    println!("Chain: {:?}", chain);
-    for block in chain.iter() {
-        println!("Block Number: {}", block.contents.block_number);
-
-        print!("Hash: ");
-        for val in block.hash.iter() {
-            print!("{:x}", val);
-        }
-        println!("");
-
-        if let Some(ref parent_hash) = block.contents.parent_hash {
-            print!("Parent Hash: ");
-            for val in parent_hash.iter() {
-                print!("{:x}", val);
-            }
-            println!("");
-        }
-
-        for txn in block.contents.transactions.iter() {
-            println!("  txn:");
-            for (account, amount) in txn.amounts.iter() {
-                println!("    {:04x}: {}", account, amount);
-            }
-        }
-
-        println!("\n---\n");
-    }
-
     println!("Final State:");
     for (account, bal) in state.balances.iter() {
         let name = match *account {
@@ -96,6 +70,65 @@ fn main() {
         };
         println!("  {}: {}", name, bal);
     }
+
+    // Save block chain to disk
+    let chain_file =  "chain.msgpack";
+    println!("Saving blockchain to \"{}\"...", chain_file);
+
+    let mut buffer = vec![];
+    Chain(chain).serialize(&mut Serializer::new(&mut buffer)).expect("Failed to serialize chain");
+    use std::fs::File;
+    use std::io::prelude::*;
+    let mut file = File::create(chain_file).expect("Failed to create file");
+    file.write_all(&buffer).expect("Failed to write chain to file");
+
+    println!("Done");
+}
+
+fn check_chain(chain: Vec<Block>) -> Result<State, Error> {
+    let mut state = State { balances: BTreeMap::new() };
+    let genesis_block = chain.get(0).expect("Chain is empty");
+
+    // Load the genesis block into the state
+    for txn in genesis_block.contents.transactions.iter() {
+        state.update(txn);
+    }
+
+    if !genesis_block.contents_match_hash() {
+        return Err(format_err!("Genesis block hash does not match expected hash"));
+    }
+
+    let mut parent = genesis_block;
+
+    for block in chain.iter().skip(1) {
+        if !check_block_validity(&block, &parent, &state) {
+            return Err(format_err!("Invalid block in chain"));
+        }
+        for txn in block.contents.transactions.iter() {
+            state.update(txn);
+        }
+        parent = block;
+    }
+
+    return Ok(state);
+}
+
+fn check_block_validity(block: &Block, parent: &Block, state: &State) -> bool {
+    let parent_number = parent.contents.block_number;
+    let parent_hash = &parent.hash;
+    let block_number = block.contents.block_number;
+
+    for txn in block.contents.transactions.iter() {
+        if !txn.is_valid(&state) {
+            return false;
+        }
+    }
+
+    let a = block.contents_match_hash();
+    let b = block_number == parent_number+1;
+    let c = block.contents.parent_hash.as_ref().map_or(false, |hash| hash == parent_hash);
+
+    return a && b && c;
 }
 
 fn make_block(transactions: &[Transaction], chain: &[Block]) -> Block {
@@ -110,6 +143,9 @@ fn make_block(transactions: &[Transaction], chain: &[Block]) -> Block {
 }
 
 #[derive(Serialize, Clone, Debug)]
+struct Chain(Vec<Block>);
+
+#[derive(Serialize, Clone, Debug)]
 struct Block {
     pub hash: Vec<u8>,
     pub contents: BlockContents,
@@ -119,6 +155,11 @@ impl Block {
     pub fn new(contents: BlockContents) -> Self {
         let hash = contents.hash();
         Self { hash, contents }
+    }
+
+    pub fn contents_match_hash(&self) -> bool {
+        let hash = self.contents.hash();
+        self.hash == hash
     }
 }
 
